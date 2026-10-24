@@ -24,18 +24,29 @@ SoloDroid is a launcher, not an emulator engine:
 - Declared capabilities include: network access, foreground service,
   push notifications, in-app purchases, ad identifiers, and licence
   verification (AppBrain safety/technology summary)
-- Minimum Android version / ABI split: **not published** on the Play
-  listing or AppBrain — determined empirically in the field test
-  (an APK inspection + install attempt answers both)
+- **Determined 2026-10-24 from the user's own backup (`ADG.xapk`,
+  142,988,144 B total):** version 25, **minSdk 24** (Android 7.0),
+  targetSdk 36; ships as base APK (106 MB) + `config.arm64_v8a`
+  split (37 MB); **native libraries are arm64-v8a only** — there is
+  no x86_64 build, so the x86_64 image depends on the emulator's
+  ARM translation. The manifest itself declares
+  `com.android.vending.BILLING`, `com.android.vending.CHECK_LICENSE`,
+  `com.google.android.gms.permission.AD_ID`, and the base APK
+  bundles Firebase + Play Services clients and Play Integrity.
 
 ## Risks, labelled
-1. **Licence / billing on AOSP — Unverified, real risk.**
-   Pure AOSP has no Play Licensing or Play Billing. If the game
-   enforces licence verification at launch, the AOSP build will not
-   start the game and the `google_apis` escape hatch (already in
-   `config.json`) becomes the shipping configuration.
-2. **ARM-only APK — Unverified.** If the APK ships only arm64 native
-   libraries, the x86_64 image may refuse or fail to run it.
+1. **Licence / billing on AOSP — CONFIRMED declared, enforcement Unverified.**
+   The game's own manifest declares Play Billing and
+   `CHECK_LICENSE`, and bundles Play Integrity. Pure AOSP has no
+   Play Licensing or Play Billing. If the game enforces licence
+   verification at launch, the AOSP build will not start the game
+   and the `google_apis` escape hatch (already in `config.json`)
+   becomes the shipping configuration.
+2. **ARM-only APK — CONFIRMED.** The XAPK's only native split is
+   arm64-v8a. The x86_64 image must translate it; whether Unity's
+   IL2CPP/Burst code survives translation is the field test's
+   central question. (An arm64 system image would run natively but
+   without hardware acceleration on an x86 host — far too slow.)
 3. **Ads on AOSP — Unverified.** Ad SDKs often bundle their own
    fallback when Play Services is absent, but rewarded-ad flows are
    the most likely feature to degrade.

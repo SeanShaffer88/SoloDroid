@@ -3,6 +3,30 @@
 All notable changes to SoloDroid are documented here.
 Format follows Keep a Changelog; versions follow Semantic Versioning.
 
+## [0.1.1] - 2026-10-24
+
+### Added
+- **XAPK / split-APK install support.** The actual game file
+  (inspected 2026-10-24 from the user's own backup, `ADG.xapk`)
+  is a base APK plus a required `config.arm64_v8a` split — the
+  base alone cannot install. `solodroid install <file.xapk>` now
+  extracts the bundle and installs base + splits together with
+  `adb install-multiple`.
+
+### Confirmed game facts (from the supplied XAPK's manifest)
+- Package `com.lavalabs.autodrill`, version 25, **minSdk 24**
+  (Android 7.0), targetSdk 36.
+- **Native code is arm64-v8a only** (25 libraries in the config
+  split; the base APK has none). There is no x86_64 build, so the
+  x86_64 emulator image must rely on its ARM translation layer.
+- The manifest declares Play Billing (`com.android.vending.BILLING`),
+  Play licence verification (`com.android.vending.CHECK_LICENSE`),
+  the ad-id permission, and the APK bundles Firebase + Play
+  Services client libraries and Play Integrity — so the pure-AOSP
+  risk flagged in 0.1.0 is real and confirmed at the manifest
+  level. Whether the game *enforces* any of it at runtime is still
+  Unverified until the field test.
+
 ## [0.1.0] - 2026-10-24
 
 ### Added

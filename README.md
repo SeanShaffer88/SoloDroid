@@ -46,11 +46,11 @@ Prerequisites:
 
 ```powershell
 solodroid setup                 # one-time, downloads the minimal SDK + creates the AVD
-solodroid install C:\path\to\autodrill.apk
+solodroid install C:\path\to\ADG.xapk   # .apk also works; .xapk installs base + splits together
 solodroid play                  # or just: solodroid
 ```
 
-Get the APK legally — for example, back it up from your own phone where the game is installed. SoloDroid does not download games from third-party APK sites.
+Get the game legally — for example, back it up from your own phone where the game is installed (it comes off the phone as an `.xapk`: a base APK plus an arm64 split — SoloDroid handles that bundle directly since v0.1.1). SoloDroid does not download games from third-party APK sites.
 
 ## Commands
 
@@ -58,7 +58,7 @@ Get the APK legally — for example, back it up from your own phone where the ga
 | --- | --- |
 | `solodroid` / `solodroid play` | Boot (Quick Boot) and launch the game |
 | `solodroid setup` | One-time minimal SDK install + AVD creation, with Progress % |
-| `solodroid install <file.apk>` | Sideload an APK via adb |
+| `solodroid install <file.apk\|.xapk>` | Sideload an APK, or an XAPK bundle (base + splits) via adb |
 | `solodroid status` | Install state + real disk usage |
 | `solodroid doctor` | Java / virtualization / disk checks |
 | `solodroid stop` | Stop the emulator |
@@ -93,7 +93,7 @@ The AOSP image has **no Google Play Store, no Play Services, no Play Licensing, 
 
 - The core idle game *may* run fine sideloaded — **Unverified** until the field test in [docs/FIELD_TEST.md](docs/FIELD_TEST.md) is run on a real Windows machine.
 - Purchases, licence checks, cloud saves, and push features may fail on AOSP even if the game itself runs.
-- An ARM-only APK may not run on the x86_64 image (also covered by the field test).
+- Confirmed from the game's own files (2026-10-24): its native code is **arm64-only**, so on the x86_64 image it runs through the emulator's ARM translation layer — workable for most Unity games, but it's the field test's central question.
 
 **Escape hatch (already built in):** if the game hard-requires Play Services, edit `config.json`, set `"image_variant": "google_apis"`, delete the AVD (`solodroid reset`), and re-run `solodroid setup`. That swaps in the Google APIs image — Play Services included, still no Play Store app — for roughly +400 MB.
 

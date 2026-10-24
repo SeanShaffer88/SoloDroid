@@ -1,6 +1,6 @@
 [package]
 name = "solodroid"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 rust-version = "1.74"
 description = "Ultra-minimal, single-game Android launcher for Windows — just enough emulator to play one game"

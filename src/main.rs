@@ -4,7 +4,7 @@
 //!   solodroid            same as `play`
 //!   solodroid setup      download the minimal SDK + create the AVD (once)
 //!   solodroid play       boot (Quick Boot) and launch the game
-//!   solodroid install <file.apk>   sideload an APK with adb
+//!   solodroid install <file.apk|.xapk>   sideload an APK / XAPK with adb
 //!   solodroid status     install state + real on-disk size
 //!   solodroid doctor     virtualization / disk / Java checks
 //!   solodroid stop       stop the emulator
@@ -52,7 +52,7 @@ fn print_help() {
          USAGE:\n  solodroid [COMMAND]\n\n\
          COMMANDS:\n  play          Boot and launch the game (default)\n  \
          setup         One-time: download minimal SDK + create the AVD\n  \
-         install <apk> Sideload an APK file into the emulator\n  \
+         install <apk> Sideload an APK — or an .xapk bundle (base + splits)\n  \
          status        Show install state and real disk usage\n  \
          doctor        Check virtualization, disk space and Java\n  \
          stop          Stop the emulator\n  \
@@ -453,7 +453,7 @@ fn cmd_play() -> i32 {
 fn cmd_install(apk: Option<&String>) -> i32 {
     let (paths, cfg) = load();
     let Some(apk) = apk else {
-        eprintln!("Usage: solodroid install <path-to-apk>");
+        eprintln!("Usage: solodroid install <path-to-apk-or-xapk>");
         return 2;
     };
     let apk_path = PathBuf::from(apk);
@@ -465,16 +465,19 @@ fn cmd_install(apk: Option<&String>) -> i32 {
         eprintln!("Run `solodroid setup` first, and boot once with `solodroid play`.");
         return 1;
     }
+
+    // XAPK: a zip holding the base APK + its split APKs. Installing the
+    // base alone fails — the splits must go in with install-multiple.
+    if is_xapk_path(&apk_path) {
+        return cmd_install_xapk(&paths, &cfg, &apk_path);
+    }
+
     println!(
         "Installing {apk} … (the emulator must be running — `solodroid play` in another window)"
     );
     match run(
         &paths.adb(),
-        &[
-            "install".to_string(),
-            "-r".to_string(),
-            apk_path.display().to_string(),
-        ],
+        &adb_install_args(&apk_path.display().to_string()),
         &[],
     ) {
         Ok(0) => {
@@ -484,8 +487,87 @@ fn cmd_install(apk: Option<&String>) -> i32 {
         Ok(code) => {
             eprintln!("adb install exited with {code}.");
             eprintln!(
-                "Common causes: emulator not running, or an ARM-only APK on the x86_64 image."
+                "Common causes: emulator not running, or an ARM-only APK on the x86_64 image (which then depends on the emulator's ARM translation)."
             );
+            1
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            1
+        }
+    }
+}
+
+fn cmd_install_xapk(paths: &Paths, cfg: &Config, xapk: &Path) -> i32 {
+    println!("XAPK detected — extracting its split APKs…");
+    let extract_dir = paths.root.join("xapk-extract");
+    let _ = std::fs::remove_dir_all(&extract_dir);
+    if let Err(e) = std::fs::create_dir_all(&extract_dir) {
+        eprintln!("Cannot create {}: {e}", extract_dir.display());
+        return 1;
+    }
+    // Expand-Archive only accepts .zip — stage a copy with that name.
+    let staged = extract_dir.join("bundle.zip");
+    if let Err(e) = std::fs::copy(xapk, &staged) {
+        eprintln!("Cannot stage the XAPK: {e}");
+        return 1;
+    }
+    let expand = Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-Command",
+            &format!(
+                "Expand-Archive -Force -Path '{}' -DestinationPath '{}'",
+                staged.display(),
+                extract_dir.display()
+            ),
+        ])
+        .status();
+    if !matches!(expand, Ok(s) if s.success()) {
+        eprintln!("Could not unzip the XAPK.");
+        return 1;
+    }
+    let _ = std::fs::remove_file(&staged);
+
+    let mut apks: Vec<String> = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&extract_dir) {
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.extension()
+                .map(|x| x.eq_ignore_ascii_case("apk"))
+                .unwrap_or(false)
+            {
+                apks.push(p.display().to_string());
+            }
+        }
+    }
+    if apks.is_empty() {
+        eprintln!("No .apk files found inside the XAPK.");
+        return 1;
+    }
+    let ordered = order_split_apks(&apks, &cfg.package);
+    println!(
+        "Installing {} APK(s) with install-multiple: {}",
+        ordered.len(),
+        ordered
+            .iter()
+            .map(|p| Path::new(p)
+                .file_name()
+                .map(|f| f.to_string_lossy().to_string())
+                .unwrap_or_else(|| p.clone()))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    println!("(the emulator must be running — `solodroid play` in another window)");
+    match run(&paths.adb(), &adb_install_multiple_args(&ordered), &[]) {
+        Ok(0) => {
+            println!("Installed. Run `solodroid play` to launch {GAME_NAME}.");
+            0
+        }
+        Ok(code) => {
+            eprintln!("adb install-multiple exited with {code}.");
+            eprintln!("Common causes: emulator not running, or the arm64 split being");
+            eprintln!("rejected — the x86_64 image must translate it (see docs/BRIEF.md).");
             1
         }
         Err(e) => {

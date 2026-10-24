@@ -332,6 +332,53 @@ pub fn adb_wait_boot_args() -> Vec<String> {
     ]
 }
 
+/// Is this path an XAPK (a zip bundle of a base APK + split APKs)?
+/// Auto Drill: Galaxy ships this way — the base APK alone will not
+/// install correctly without its `config.arm64_v8a` split.
+pub fn is_xapk_path(path: &Path) -> bool {
+    path.extension()
+        .map(|e| e.eq_ignore_ascii_case("xapk"))
+        .unwrap_or(false)
+}
+
+/// Order the APKs found inside an XAPK for `adb install-multiple`:
+/// the base APK first (`<package>.apk` or `base.apk`), then the
+/// `config.*` splits alphabetically, then anything else alphabetically.
+pub fn order_split_apks(names: &[String], package: &str) -> Vec<String> {
+    let base_names = [format!("{package}.apk"), "base.apk".to_string()];
+    let mut base: Vec<String> = Vec::new();
+    let mut configs: Vec<String> = Vec::new();
+    let mut others: Vec<String> = Vec::new();
+    for n in names {
+        let file = Path::new(n)
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_else(|| n.clone());
+        if base_names.iter().any(|b| b == &file) {
+            base.push(n.clone());
+        } else if file.starts_with("config.") {
+            configs.push(n.clone());
+        } else {
+            others.push(n.clone());
+        }
+    }
+    configs.sort();
+    others.sort();
+    base.append(&mut configs);
+    base.append(&mut others);
+    base
+}
+
+pub fn adb_install_args(apk: &str) -> Vec<String> {
+    vec!["install".into(), "-r".into(), apk.into()]
+}
+
+pub fn adb_install_multiple_args(apks: &[String]) -> Vec<String> {
+    let mut v: Vec<String> = vec!["install-multiple".into(), "-r".into()];
+    v.extend(apks.iter().cloned());
+    v
+}
+
 pub fn is_valid_package(s: &str) -> bool {
     !s.is_empty()
         && s.contains('.')
@@ -512,6 +559,34 @@ mod tests {
         let args = adb_launch_args(GAME_PACKAGE);
         assert!(args.contains(&GAME_PACKAGE.to_string()));
         assert!(args.contains(&"monkey".to_string()));
+    }
+
+    #[test]
+    fn xapk_detection_is_by_extension() {
+        assert!(is_xapk_path(Path::new("ADG.xapk")));
+        assert!(is_xapk_path(Path::new("game.XAPK")));
+        assert!(!is_xapk_path(Path::new("game.apk")));
+        assert!(!is_xapk_path(Path::new("xapk")));
+    }
+
+    #[test]
+    fn split_ordering_puts_base_first_then_configs() {
+        let names = vec![
+            "config.arm64_v8a.apk".to_string(),
+            "com.lavalabs.autodrill.apk".to_string(),
+        ];
+        let ordered = order_split_apks(&names, GAME_PACKAGE);
+        assert_eq!(ordered[0], "com.lavalabs.autodrill.apk");
+        assert_eq!(ordered[1], "config.arm64_v8a.apk");
+    }
+
+    #[test]
+    fn install_multiple_args_include_every_split() {
+        let apks = vec!["base.apk".to_string(), "config.arm64_v8a.apk".to_string()];
+        let args = adb_install_multiple_args(&apks);
+        assert_eq!(args[0], "install-multiple");
+        assert!(args.contains(&"base.apk".to_string()));
+        assert!(args.contains(&"config.arm64_v8a.apk".to_string()));
     }
 
     #[test]
