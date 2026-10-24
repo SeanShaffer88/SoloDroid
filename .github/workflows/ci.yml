@@ -21,3 +21,8 @@ jobs:
         run: cargo test --locked
       - name: Build release
         run: cargo build --release --locked
+      - name: Upload exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: solodroid-windows-x64
+          path: target/release/solodroid.exe
