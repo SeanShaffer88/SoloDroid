@@ -46,9 +46,12 @@ Prerequisites:
 
 ```powershell
 solodroid setup                 # one-time, downloads the minimal SDK + creates the AVD
-solodroid install C:\path\to\ADG.xapk   # .apk also works; .xapk installs base + splits together
-solodroid play                  # or just: solodroid
+solodroid                       # boots; if the game isn't installed yet, a file
+                                # picker opens — choose ADG.xapk and it installs
+                                # the game (base + splits) and launches it
 ```
+
+Prefer the terminal? `solodroid install C:\path\to\ADG.xapk` does the same install directly (`.apk` files work too; `.xapk` bundles install base + splits together since v0.1.1).
 
 Get the game legally — for example, back it up from your own phone where the game is installed (it comes off the phone as an `.xapk`: a base APK plus an arm64 split — SoloDroid handles that bundle directly since v0.1.1). SoloDroid does not download games from third-party APK sites.
 
@@ -58,7 +61,7 @@ Get the game legally — for example, back it up from your own phone where the g
 | --- | --- |
 | `solodroid` / `solodroid play` | Boot (Quick Boot) and launch the game |
 | `solodroid setup` | One-time minimal SDK install + AVD creation, with Progress % |
-| `solodroid install <file.apk\|.xapk>` | Sideload an APK, or an XAPK bundle (base + splits) via adb |
+| `solodroid install [file.apk\|.xapk]` | Sideload an APK, or an XAPK bundle (base + splits) via adb; no file given → file picker opens |
 | `solodroid status` | Install state + real disk usage |
 | `solodroid doctor` | Java / virtualization / disk checks |
 | `solodroid stop` | Stop the emulator |

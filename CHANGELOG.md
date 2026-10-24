@@ -3,6 +3,19 @@
 All notable changes to SoloDroid are documented here.
 Format follows Keep a Changelog; versions follow Semantic Versioning.
 
+## [0.1.2] - 2026-10-24
+
+### Added
+- **Launch-time file picker.** Running `solodroid` / `play` when
+  the game is not yet installed now opens the native Windows file
+  picker ("Pick the Auto Drill: Galaxy game file", filtered to
+  `.xapk`/`.apk`) instead of stopping with a "run install"
+  message — pick `ADG.xapk` and SoloDroid installs it (base +
+  splits) and launches the game in the same run. `solodroid
+  install` with no file argument opens the same picker. Zero new
+  dependencies: the dialog is direct `GetOpenFileNameW` FFI with a
+  compile-time-pinned struct layout.
+
 ## [0.1.1] - 2026-10-24
 
 ### Added

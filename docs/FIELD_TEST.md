@@ -16,10 +16,12 @@ Android Emulator at speed and cannot render the result.
 - [x] Game file obtained: `ADG.xapk` (base + `config.arm64_v8a` split),
       already inspected by Muse 2026-10-24 — arm64-only native code,
       minSdk 24, Play Billing + CHECK_LICENSE + Play Integrity declared
-- [ ] `solodroid install <path-to-ADG.xapk>` — record the exact result:
+- [ ] `solodroid` — on the first run (game not installed) the file
+      picker opens; choose `ADG.xapk`. Record the exact result:
       - [ ] Installed cleanly (base + split via install-multiple)
       - [ ] Failed: paste the adb error verbatim (an ABI/translation
             rejection here is decisive evidence)
+      (Terminal equivalent: `solodroid install <path-to-ADG.xapk>`)
 - [ ] `solodroid play` — record:
       - [ ] Game reaches its main screen (screenshot)
       - [ ] Game blocks on a licence / Play Services error (screenshot — this triggers the `google_apis` escape hatch)

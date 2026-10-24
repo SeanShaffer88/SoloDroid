@@ -373,6 +373,32 @@ pub fn adb_install_args(apk: &str) -> Vec<String> {
     vec!["install".into(), "-r".into(), apk.into()]
 }
 
+/// Title of the launch-time file picker dialog.
+pub const PICKER_TITLE: &str = "Pick the Auto Drill: Galaxy game file";
+
+/// The picker's file-type filter as a UTF-16, double-NUL-terminated
+/// string in the exact layout `GetOpenFileNameW` expects:
+/// (label, pattern) pairs, each NUL-terminated, plus a final NUL.
+pub fn picker_filter_wide() -> Vec<u16> {
+    let parts = [
+        "Game packages (*.xapk;*.apk)",
+        "*.xapk;*.apk",
+        "XAPK bundles (*.xapk)",
+        "*.xapk",
+        "APK files (*.apk)",
+        "*.apk",
+        "All files (*.*)",
+        "*.*",
+    ];
+    let mut v: Vec<u16> = Vec::new();
+    for part in parts {
+        v.extend(part.encode_utf16());
+        v.push(0);
+    }
+    v.push(0);
+    v
+}
+
 pub fn adb_install_multiple_args(apks: &[String]) -> Vec<String> {
     let mut v: Vec<String> = vec!["install-multiple".into(), "-r".into()];
     v.extend(apks.iter().cloned());
@@ -587,6 +613,18 @@ mod tests {
         assert_eq!(args[0], "install-multiple");
         assert!(args.contains(&"base.apk".to_string()));
         assert!(args.contains(&"config.arm64_v8a.apk".to_string()));
+    }
+
+    #[test]
+    fn picker_filter_is_double_nul_terminated_and_offers_xapk() {
+        let f = picker_filter_wide();
+        assert_eq!(&f[f.len() - 2..], &[0, 0]);
+        let text = String::from_utf16_lossy(&f);
+        assert!(text.contains("*.xapk;*.apk"));
+        assert!(text.contains("Game packages"));
+        // No interior double-NUL before the end (that would truncate it).
+        let interior = &f[..f.len() - 2];
+        assert!(!interior.windows(2).any(|w| w == [0, 0]));
     }
 
     #[test]

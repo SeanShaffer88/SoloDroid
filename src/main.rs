@@ -50,9 +50,11 @@ fn print_help() {
         "SoloDroid {} — the smallest way to play one Android game on Windows\n\
          Built for: {GAME_NAME} ({GAME_PACKAGE})\n\n\
          USAGE:\n  solodroid [COMMAND]\n\n\
-         COMMANDS:\n  play          Boot and launch the game (default)\n  \
+         COMMANDS:\n  play          Boot and launch the game (default); if the game\n  \
+         is not installed, a file picker opens to choose its .xapk\n  \
          setup         One-time: download minimal SDK + create the AVD\n  \
-         install <apk> Sideload an APK — or an .xapk bundle (base + splits)\n  \
+         install [apk] Sideload an APK — or an .xapk bundle (base + splits);\n  \
+         with no file given, the file picker opens\n  \
          status        Show install state and real disk usage\n  \
          doctor        Check virtualization, disk space and Java\n  \
          stop          Stop the emulator\n  \
@@ -371,10 +373,14 @@ fn cmd_play() -> i32 {
         return 1;
     }
 
-    // Already running? Just relaunch the game.
+    // Already running? Install (via picker) if needed, then launch.
     if let Ok(out) = run_capture(&paths.adb(), &["devices".to_string()]) {
         if out.contains("emulator-") {
-            println!("Emulator already running — launching {GAME_NAME}…");
+            println!("Emulator already running.");
+            if !ensure_game_installed(&paths, &cfg) {
+                return 1;
+            }
+            println!("Launching {GAME_NAME}…");
             let _ = run(&paths.adb(), &adb_launch_args(&cfg.package), &[]);
             return 0;
         }
@@ -419,22 +425,9 @@ fn cmd_play() -> i32 {
     }
     println!("Progress: 80% — booted. Launching {GAME_NAME}…");
 
-    // Is the game installed?
-    let pkgs = run_capture(
-        &paths.adb(),
-        &[
-            "shell".into(),
-            "pm".into(),
-            "list".into(),
-            "packages".into(),
-            cfg.package.clone(),
-        ],
-    )
-    .unwrap_or_default();
-    if !pkgs.contains(&cfg.package) {
-        println!("{GAME_NAME} is not installed yet.");
-        println!("Install it with:  solodroid install <path-to-apk>");
-        println!("Play listing:     {GAME_PLAY_URL}");
+    // Not installed yet? The picker opens so the user can choose the
+    // .xapk — SoloDroid installs it (base + splits) and then launches.
+    if !ensure_game_installed(&paths, &cfg) {
         return 1;
     }
 
@@ -452,28 +445,40 @@ fn cmd_play() -> i32 {
 
 fn cmd_install(apk: Option<&String>) -> i32 {
     let (paths, cfg) = load();
-    let Some(apk) = apk else {
-        eprintln!("Usage: solodroid install <path-to-apk-or-xapk>");
-        return 2;
+    // No path given? Let the user pick the file instead of typing it.
+    let apk_path = match apk {
+        Some(a) => PathBuf::from(a),
+        None => match pick_game_file() {
+            Some(p) => p,
+            None => {
+                eprintln!("Usage: solodroid install <path-to-apk-or-xapk>");
+                return 2;
+            }
+        },
     };
-    let apk_path = PathBuf::from(apk);
     if !apk_path.exists() {
-        eprintln!("No such file: {apk}");
+        eprintln!("No such file: {}", apk_path.display());
         return 1;
     }
     if !setup_complete(&paths, &cfg) {
         eprintln!("Run `solodroid setup` first, and boot once with `solodroid play`.");
         return 1;
     }
+    do_install(&paths, &cfg, &apk_path)
+}
 
+/// Install one already-chosen game file (.apk or .xapk).
+/// Assumes setup is complete; the emulator should be running.
+fn do_install(paths: &Paths, cfg: &Config, apk_path: &Path) -> i32 {
     // XAPK: a zip holding the base APK + its split APKs. Installing the
     // base alone fails — the splits must go in with install-multiple.
-    if is_xapk_path(&apk_path) {
-        return cmd_install_xapk(&paths, &cfg, &apk_path);
+    if is_xapk_path(apk_path) {
+        return cmd_install_xapk(paths, cfg, apk_path);
     }
 
     println!(
-        "Installing {apk} … (the emulator must be running — `solodroid play` in another window)"
+        "Installing {} … (the emulator must be running — `solodroid play` in another window)",
+        apk_path.display()
     );
     match run(
         &paths.adb(),
@@ -494,6 +499,42 @@ fn cmd_install(apk: Option<&String>) -> i32 {
         Err(e) => {
             eprintln!("{e}");
             1
+        }
+    }
+}
+
+fn game_installed(paths: &Paths, cfg: &Config) -> bool {
+    let pkgs = run_capture(
+        &paths.adb(),
+        &[
+            "shell".into(),
+            "pm".into(),
+            "list".into(),
+            "packages".into(),
+            cfg.package.clone(),
+        ],
+    )
+    .unwrap_or_default();
+    pkgs.contains(&cfg.package)
+}
+
+/// If the game is missing, offer the file picker and install what the
+/// user picks. Returns true when the game is installed at the end.
+fn ensure_game_installed(paths: &Paths, cfg: &Config) -> bool {
+    if game_installed(paths, cfg) {
+        return true;
+    }
+    println!("{GAME_NAME} is not installed yet — pick its .xapk file to install it now…");
+    match pick_game_file() {
+        Some(picked) => {
+            println!("Installing {} …", picked.display());
+            do_install(paths, cfg, &picked) == 0 && game_installed(paths, cfg)
+        }
+        None => {
+            println!("No file picked. When you have the game file, run:");
+            println!("  solodroid install <path-to-ADG.xapk>");
+            println!("Play listing: {GAME_PLAY_URL}");
+            false
         }
     }
 }
@@ -615,5 +656,97 @@ fn cmd_reset() -> i32 {
     } else {
         println!("Cancelled.");
         0
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Launch-time file picker (Windows native dialog, zero dependencies)
+// ---------------------------------------------------------------------------
+
+/// Open the native Windows file picker for the game file.
+/// Returns `None` when the user cancels — or on non-Windows builds,
+/// where there is no dialog (this launcher targets Windows).
+#[cfg(windows)]
+fn pick_game_file() -> Option<PathBuf> {
+    picker_win::pick()
+}
+
+#[cfg(not(windows))]
+fn pick_game_file() -> Option<PathBuf> {
+    None
+}
+
+#[cfg(windows)]
+mod picker_win {
+    use std::ffi::{c_void, OsString};
+    use std::os::windows::ffi::OsStringExt;
+    use std::path::PathBuf;
+
+    // OPENFILENAMEW, in the documented field order (learn.microsoft.com).
+    #[repr(C)]
+    struct OpenFileNameW {
+        l_struct_size: u32,
+        hwnd_owner: *mut c_void,
+        h_instance: *mut c_void,
+        lpstr_filter: *const u16,
+        lpstr_custom_filter: *mut u16,
+        n_max_cust_filter: u32,
+        n_filter_index: u32,
+        lpstr_file: *mut u16,
+        n_max_file: u32,
+        lpstr_file_title: *mut u16,
+        n_max_file_title: u32,
+        lpstr_initial_dir: *const u16,
+        lpstr_title: *const u16,
+        flags: u32,
+        n_file_offset: u16,
+        n_file_extension: u16,
+        lpstr_def_ext: *const u16,
+        l_cust_data: isize,
+        lpfn_hook: *mut c_void,
+        lp_template_name: *const u16,
+        pv_reserved: *mut c_void,
+        dw_reserved: u32,
+        flags_ex: u32,
+    }
+
+    // Pinned layout: OPENFILENAMEW in documented field order is 152
+    // bytes on 64-bit Windows.
+    const _: () = assert!(std::mem::size_of::<OpenFileNameW>() == 152);
+
+    const OFN_PATHMUSTEXIST: u32 = 0x0800;
+    const OFN_FILEMUSTEXIST: u32 = 0x1000;
+    const OFN_NOCHANGEDIR: u32 = 0x0008;
+
+    #[link(name = "comdlg32")]
+    extern "system" {
+        fn GetOpenFileNameW(ofn: *mut OpenFileNameW) -> i32;
+    }
+
+    fn wide_z(text: &str) -> Vec<u16> {
+        text.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    pub fn pick() -> Option<PathBuf> {
+        let filter = solodroid::picker_filter_wide();
+        let title = wide_z(solodroid::PICKER_TITLE);
+        let mut buffer = vec![0u16; 32768];
+        let mut ofn: OpenFileNameW = unsafe { std::mem::zeroed() };
+        ofn.l_struct_size = std::mem::size_of::<OpenFileNameW>() as u32;
+        ofn.lpstr_filter = filter.as_ptr();
+        ofn.n_filter_index = 1;
+        ofn.lpstr_file = buffer.as_mut_ptr();
+        ofn.n_max_file = buffer.len() as u32;
+        ofn.lpstr_title = title.as_ptr();
+        ofn.flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+        let ok = unsafe { GetOpenFileNameW(&mut ofn) };
+        if ok == 0 {
+            return None; // cancelled or closed
+        }
+        let len = buffer.iter().position(|&c| c == 0).unwrap_or(0);
+        if len == 0 {
+            return None;
+        }
+        Some(PathBuf::from(OsString::from_wide(&buffer[..len])))
     }
 }
