@@ -1,0 +1,25 @@
+[package]
+name = "solodroid"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.74"
+description = "Ultra-minimal, single-game Android launcher for Windows — just enough emulator to play one game"
+license = "MIT"
+repository = "https://github.com/SeanShaffer88/SoloDroid"
+keywords = ["android", "emulator", "windows", "launcher"]
+categories = ["emulators", "games"]
+
+[lib]
+name = "solodroid"
+path = "src/lib.rs"
+
+[[bin]]
+name = "solodroid"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
